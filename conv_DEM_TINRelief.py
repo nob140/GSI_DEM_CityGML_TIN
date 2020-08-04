@@ -31,6 +31,7 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 	tupleList = pd.read_csv(io.StringIO(child.text), header=None)
 	tupleList = tupleList[1]
 
+	# gml:boundedBy
 	hmin = min(tupleList)
 	hmax = max(tupleList)
 
@@ -50,6 +51,7 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 	tmp = child.text.split()
 	upperCorner = [float(s) for s in tmp]
 
+	# calculate mesh size
 	child = root.find('.//{http://www.opengis.net/gml/3.2}high')
 	if child == None:
 		error('Not correct data.')
@@ -66,11 +68,12 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 		error('Not correct data.')
 	fid = child.text
 
-	if (high[0]+1)*(high[1]+1) != len(tupleList):
+	if xlen * ylen != len(tupleList):
 		error('Data length is not correct.')
 
+	# develop data for calculation
 	data = {}
-	for i in range(len(tupleList)):
+	for i in range(xlen * ylen):
 		x = i % xlen
 		y = int(i / xlen)
 		#print(x, y, tupleList[i])
@@ -78,8 +81,10 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 			data[x] = {}
 		data[x][y] = str(tupleList[i])
 
-
+	# CityGML document
 	doc = xml.dom.minidom.Document()
+
+	# core:CityModel
 	CityModel = doc.createElementNS("http://www.opengis.net/citygml/2.0", "core:CityModel")
 	CityModel.setAttribute("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
 	CityModel.setAttribute("xmlns:gml", "http://www.opengis.net/gml")
@@ -87,36 +92,37 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 	CityModel.setAttribute("xmlns:dem", "http://www.opengis.net/citygml/relief/2.0")
 	CityModel.setAttribute("xsi:schemaLocation", "http://www.opengis.net/gml http://schemas.opengis.net/gml/3.1.1/base/gml.xsd http://www.opengis.net/citygml/2.0 http://schemas.opengis.net/citygml/2.0/cityGMLBase.xsd http://www.opengis.net/citygml/relief/2.0 http://schemas.opengis.net/citygml/relief/2.0/relief.xsd")
 
-	node = doc.createElement("gml:boundedBy")
-
+	# gml:boundedBy
 	Envelope = doc.createElement("gml:Envelope")
 	Envelope.setAttribute("srsName", "http://www.opengis.net/def/crs/EPSG/0/6697")
 	Envelope.setAttribute("srsDimension", "3")
 	        
-	child = doc.createElement("gml:lowerCorner")
-	tmp = boundedBy[0][0].text + " " + str(hmin)
-	child.appendChild(doc.createTextNode(tmp))
-	Envelope.appendChild(child)
+	node = doc.createElement("gml:lowerCorner")
+	text = boundedBy[0][0].text + " " + str(hmin)
+	node.appendChild(doc.createTextNode(text))
+	Envelope.appendChild(node)
 
-	child = doc.createElement("gml:upperCorner")
-	tmp = boundedBy[0][1].text + " " + str(hmax)
-	child.appendChild(doc.createTextNode(tmp))
-	Envelope.insertBefore(child, None)
+	node = doc.createElement("gml:upperCorner")
+	text = boundedBy[0][1].text + " " + str(hmax)
+	node.appendChild(doc.createTextNode(text))
+	Envelope.insertBefore(node, None)
 
+	node = doc.createElement("gml:boundedBy")
 	node.appendChild(Envelope)
 	CityModel.appendChild(node)
 
+	# dem:TINRelief
 	cityObjectMember = doc.createElement("core:cityObjectMember")
 
 	ReliefFeature = doc.createElement("dem:ReliefFeature")
 	ReliefFeature.setAttribute("gml:id", "RELIEF_" + fid)
 
 	node = doc.createElement("gml:name")
-	node.appendChild(doc.createTextNode("TIN LOD0"))
+	node.appendChild(doc.createTextNode("TIN LOD1"))
 	ReliefFeature.insertBefore(node, None)
 
 	node = doc.createElement("dem:lod")
-	node.appendChild(doc.createTextNode("0"))
+	node.appendChild(doc.createTextNode("1"))
 	ReliefFeature.insertBefore(node, None)
 
 	reliefComponent = doc.createElement("dem:reliefComponent")
@@ -129,7 +135,7 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 	TINRelief.insertBefore(node, None)
 
 	node = doc.createElement("dem:lod")
-	node.appendChild(doc.createTextNode("0"))
+	node.appendChild(doc.createTextNode("1"))
 	TINRelief.insertBefore(node, None)
 
 	tin = doc.createElement("dem:tin")
@@ -137,39 +143,46 @@ def conv_DEM_TINRelief(inputfile, outputfile):
 	TriangulatedSurface = doc.createElement("gml:TriangulatedSurface")
 	TriangulatedSurface.setAttribute("gml:id", "Ground_" + fid)
 
+	# gml:trianglePatches
 	trianglePatches = doc.createElement("gml:trianglePatches")
 
 	for y in range(ylen-1):
 		for x in range(xlen-1):
-			lat = upperCorner[0] - y * dlat
-			lon = lowerCorner[1] + x * dlat
+			# center of mesh
+			#lat = upperCorner[0] - y * dlat
+			#lon = lowerCorner[1] + x * dlat
+			lat = upperCorner[0] - (y + 0.5) * dlat
+			lon = lowerCorner[1] + (x + 0.5) * dlon
 			
+			# upper left triangle
 			#print(lat, lon, data[x][y], lat-dlat, lon, data[x][y+1], lat, lon+dlon, data[x+1][y])
-			text = str(lat) +" "+ str(lon) +" "+ data[x][y] +" "+ \
-				str(lat-dlat) +" "+ str(lon) +" "+ data[x][y+1] +" "+ \
-				str(lat) +" "+ str(lon+dlon) +" "+ data[x+1][y] +" "+ \
-				str(lat) +" "+ str(lon) +" "+ data[x][y]
+			text = str(lat)   +" "+ str(lon)      +" "+ data[x][y]   +" "+ \
+				str(lat-dlat) +" "+ str(lon)      +" "+ data[x][y+1] +" "+ \
+				str(lat)      +" "+ str(lon+dlon) +" "+ data[x+1][y] +" "+ \
+				str(lat)      +" "+ str(lon)      +" "+ data[x][y]
 			#print(text)
 			add_triangle(doc, trianglePatches, text)
 			
+			# lower right triangle
 			#print(lat-dlat, lon+dlon, data[x+1][y+1], lat, lon+dlon, data[x+1][y], lat-dlat, lon, data[x][y+1])
 			text = str(lat-dlat) +" "+ str(lon+dlon) +" "+ data[x+1][y+1] +" "+ \
-				str(lat) +" "+ str(lon+dlon) +" "+ data[x+1][y] +" "+ \
-				str(lat-dlat) +" "+ str(lon) +" "+ data[x][y+1] +" "+ \
-				str(lat-dlat) +" "+ str(lon+dlon) +" "+ data[x+1][y+1]
+				str(lat)         +" "+ str(lon+dlon) +" "+ data[x+1][y]   +" "+ \
+				str(lat-dlat)    +" "+ str(lon)      +" "+ data[x][y+1]   +" "+ \
+				str(lat-dlat)    +" "+ str(lon+dlon) +" "+ data[x+1][y+1]
 			#print(text)
 			add_triangle(doc, trianglePatches, text)
 
+	# append all classes
 	TriangulatedSurface.appendChild(trianglePatches)
 	tin.appendChild(TriangulatedSurface)
 	TINRelief.insertBefore(tin, None)
 	reliefComponent.appendChild(TINRelief)
 	ReliefFeature.insertBefore(reliefComponent, None)
 	cityObjectMember.appendChild(ReliefFeature)
-	CityModel.appendChild(cityObjectMember)
-	#doc.appendChild(CityModel)
+	CityModel.insertBefore(cityObjectMember, None)
 	doc.insertBefore(CityModel, None)
 
+	# output CityGML file
 	with open(outputfile, "wb") as xml_file:
 		xml_file.write(doc.toprettyxml(encoding="utf-8"))
 
